@@ -21,3 +21,24 @@ rad.json
 *.flf
 #Test results file
 TestResults.xml
+
+node_modules
+.env
+/generated/prisma
+
+# Next.js build outputs
+.next/
+out/
+
+# SQLite databases & temp files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
+# TypeScript build info
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db

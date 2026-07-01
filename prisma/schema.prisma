@@ -1,0 +1,289 @@
+datasource db {
+  provider = "sqlite"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                   Int                @id @default(autoincrement())
+  email                String             @unique
+  passwordHash         String
+  name                 String
+  role                 String             // "ADMIN", "FARMER", "VET"
+  status               String             @default("ACTIVE") // "ACTIVE", "PENDING", "SUSPENDED"
+  licenseNumber        String?            // For Vets
+  qualification        String?            // For Vets
+  specialization       String?            // For Vets
+  county               String?            // For Vets / Farmers
+  subCounty            String?            // For Vets / Farmers
+  phone                String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  farms                Farm[]
+  subscriptions        Subscription[]
+  payments             Payment[]
+  notifications        Notification[]
+  vetAppointments      Appointment[]      @relation("VetAppointments")
+  farmerAppointments   Appointment[]      @relation("FarmerAppointments")
+  vetReports           VetReport[]        @relation("VetReports")
+  learningResources    LearningResource[]
+}
+
+model Farm {
+  id           Int      @id @default(autoincrement())
+  name         String
+  ownerName    String
+  email        String
+  phone        String
+  county       String
+  subCounty    String
+  ward         String
+  gpsLocation  String?
+  farmerId     Int
+  farmer       User     @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  animals      Animal[]
+  transactions Transaction[]
+  inventoryItems InventoryItem[]
+  scheduleEvents ScheduleEvent[]
+  workers       Worker[]
+  workerTasks   WorkerTask[]
+}
+
+model Subscription {
+  id         Int      @id @default(autoincrement())
+  farmerId   Int
+  farmer     User     @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+  plan       String   // "BASIC", "STANDARD", "PREMIUM"
+  status     String   // "ACTIVE", "EXPIRED", "PENDING"
+  startDate  DateTime @default(now())
+  endDate    DateTime
+  amountPaid Float
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Animal {
+  id                Int                @id @default(autoincrement())
+  tagNumber         String
+  name              String
+  qrCode            String?
+  photo             String?
+  type              String             // "COW", "GOAT", "SHEEP", "PIG", "POULTRY", "RABBIT"
+  breed             String
+  gender            String             // "MALE", "FEMALE"
+  dob               DateTime
+  color             String
+  weight            Float
+  fatherTag         String?
+  motherTag         String?
+  status            String             @default("ACTIVE") // "ACTIVE", "SOLD", "DEAD", "MISSING"
+  purchaseDate      DateTime?
+  purchaseCost      Float?
+  farmId            Int
+  farm              Farm               @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  healthRecords     HealthRecord[]
+  breedingRecords   BreedingRecord[]
+  productionRecords ProductionRecord[]
+  appointments      Appointment[]
+  vetReports        VetReport[]
+  scheduleEvents    ScheduleEvent[]
+
+  @@unique([farmId, tagNumber])
+}
+
+model HealthRecord {
+  id              Int        @id @default(autoincrement())
+  animalId        Int
+  animal          Animal     @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  type            String     // "VACCINATION", "TREATMENT", "DISEASE", "VET_VISIT", "MEDICATION"
+  title           String
+  date            DateTime   @default(now())
+  notes           String?
+  cost            Float      @default(0.0)
+  veterinarianId  Int?
+  reportId        Int?       @unique
+  vetReport       VetReport? @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  createdAt       DateTime   @default(now())
+}
+
+model BreedingRecord {
+  id             Int       @id @default(autoincrement())
+  animalId       Int
+  animal         Animal    @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  type           String    // "HEAT_DETECTION", "MATING", "ARTIFICIAL_INSEMINATION", "PREGNANCY_CHECK", "CALVING_LAMBING"
+  date           DateTime  @default(now())
+  details        String?
+  result         String?   // "PREGNANT", "NOT_PREGNANT", "SUCCESS", "FAILED"
+  nextActionDate DateTime?
+  createdAt      DateTime  @default(now())
+}
+
+model ProductionRecord {
+  id        Int      @id @default(autoincrement())
+  animalId  Int
+  animal    Animal   @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  date      DateTime @default(now())
+  milkYield Float?   // For dairy (liters)
+  eggCount  Int?     // For poultry (eggs count)
+  notes     String?
+  createdAt DateTime @default(now())
+}
+
+model Appointment {
+  id             Int        @id @default(autoincrement())
+  farmerId       Int
+  farmer         User       @relation("FarmerAppointments", fields: [farmerId], references: [id], onDelete: Cascade)
+  veterinarianId Int
+  veterinarian   User       @relation("VetAppointments", fields: [veterinarianId], references: [id], onDelete: Cascade)
+  animalId       Int
+  animal         Animal     @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  preferredDate  DateTime
+  urgency        String     // "LOW", "MEDIUM", "HIGH"
+  status         String     @default("PENDING") // "PENDING", "APPROVED", "COMPLETED", "CANCELLED"
+  symptoms       String
+  county         String
+  subCounty      String
+  specialization String
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  vetReport      VetReport?
+}
+
+model VetReport {
+  id              Int           @id @default(autoincrement())
+  appointmentId   Int?          @unique
+  appointment     Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  veterinarianId  Int
+  veterinarian    User          @relation("VetReports", fields: [veterinarianId], references: [id], onDelete: Cascade)
+  animalId        Int
+  animal          Animal        @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  temperature     Float
+  weight          Float
+  heartRate       Float
+  respiratoryRate Float
+  symptoms        String        // Comma-separated or JSON list
+  diagnosis       String
+  treatmentGiven  String
+  medicationName  String?
+  medicationDosage String?
+  medicationDuration String?
+  recommendations String?
+  followUpDate    DateTime?
+  createdAt       DateTime      @default(now())
+  healthRecord    HealthRecord?
+}
+
+model LearningResource {
+  id          Int      @id @default(autoincrement())
+  title       String
+  category    String   // "CATTLE", "GOAT", "SHEEP", "POULTRY", "PIG", "RABBIT"
+  module      String?  // "FEEDING", "VACCINATION", "DISEASES", "BREEDING", "HOUSING"
+  contentType String   // "VIDEO", "PDF", "ARTICLE", "IMAGE"
+  contentUrl  String?
+  contentBody String?
+  authorId    Int
+  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+}
+
+model Payment {
+  id                 Int      @id @default(autoincrement())
+  userId             Int
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount             Float
+  phoneNumber        String
+  status             String   @default("PENDING") // "PENDING", "SUCCESS", "FAILED"
+  mpesaReceiptNumber String?
+  transactionDate    DateTime?
+  checkoutRequestId  String   @unique
+  merchantRequestId  String?
+  plan               String?  // Plan name associated with payment
+  createdAt          DateTime @default(now())
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  type      String   // "VACCINATION", "DEWORMING", "PREGNANCY_CHECK", "APPOINTMENT", "SUBSCRIPTION"
+  animalId  Int?
+  createdAt DateTime @default(now())
+}
+
+model Transaction {
+  id          Int      @id @default(autoincrement())
+  farmId      Int
+  farm        Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  type        String   // "INCOME", "EXPENSE"
+  category    String   // "MILK_SALES", "EGG_SALES", "ANIMAL_SALES", "BREEDING_SERVICES", "FEED", "MEDICATION", "VET_SERVICES", "LABOUR", "TRANSPORT", "OTHER"
+  amount      Float
+  date        DateTime @default(now())
+  description String?
+  createdAt   DateTime @default(now())
+}
+
+model InventoryItem {
+  id                Int       @id @default(autoincrement())
+  farmId            Int
+  farm              Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  name              String
+  category          String    // "DRUG", "VACCINE", "FEED", "EQUIPMENT"
+  quantity          Float
+  unit              String    // "kg", "bags", "liters", "units"
+  expiryDate        DateTime?
+  lowStockThreshold Float     @default(0.0)
+  supplier          String?
+  cost              Float     @default(0.0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model ScheduleEvent {
+  id             Int       @id @default(autoincrement())
+  farmId         Int
+  farm           Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  animalId       Int?
+  animal         Animal?   @relation(fields: [animalId], references: [id], onDelete: Cascade)
+  type           String    // "VACCINATION", "DEWORMING", "OTHER"
+  title          String
+  dueDate        DateTime
+  completed      Boolean   @default(false)
+  completedDate  DateTime?
+  notes          String?
+  createdAt      DateTime  @default(now())
+}
+
+model Worker {
+  id        Int          @id @default(autoincrement())
+  farmId    Int
+  farm      Farm         @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  name      String
+  role      String
+  phone     String?
+  status    String       @default("ACTIVE") // "ACTIVE", "INACTIVE"
+  createdAt DateTime     @default(now())
+  tasks     WorkerTask[]
+}
+
+model WorkerTask {
+  id          Int       @id @default(autoincrement())
+  farmId      Int
+  farm        Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  workerId    Int
+  worker      Worker    @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  taskName    String
+  description String?
+  status      String    @default("PENDING") // "PENDING", "COMPLETED"
+  dueDate     DateTime
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+}
