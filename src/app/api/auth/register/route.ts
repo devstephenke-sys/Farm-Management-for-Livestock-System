@@ -1,15 +1,48 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { hashPassword } from '@/lib/auth';
+import { createAuditLog } from '@/lib/api';
+import { UserRole, UserStatus, SubscriptionPlan, SubscriptionStatus } from '@prisma/client';
+import { z } from 'zod';
+
+const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  name: z.string().min(1, 'Name is required'),
+  role: z.nativeEnum(UserRole),
+  phone: z.string().optional(),
+  
+  // Farmer details
+  farmName: z.string().optional(),
+  county: z.string().optional(),
+  subCounty: z.string().optional(),
+  ward: z.string().optional(),
+
+  // Vet details
+  licenseNumber: z.string().optional(),
+  qualification: z.string().optional(),
+  specialization: z.string().optional(),
+});
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { email, password, name, role, phone } = body;
-
-    if (!email || !password || !name || !role) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Malformed JSON' }, { status: 400 });
     }
+
+    const parsed = registerSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ 
+        error: 'ValidationError', 
+        message: 'Invalid registration data', 
+        details: parsed.error.format() 
+      }, { status: 400 });
+    }
+
+    const { email, password, name, role, phone } = parsed.data;
 
     // Check if email already exists
     const existingUser = await prisma.user.findUnique({
@@ -21,10 +54,10 @@ export async function POST(req: Request) {
 
     const passwordHash = await hashPassword(password);
 
-    if (role === 'FARMER') {
-      const { farmName, county, subCounty, ward } = body;
+    if (role === UserRole.FARMER) {
+      const { farmName, county, subCounty, ward } = parsed.data;
       if (!farmName || !county || !subCounty || !ward) {
-        return NextResponse.json({ error: 'Missing farm registration details' }, { status: 400 });
+        return NextResponse.json({ error: 'Missing farm registration details (farmName, county, subCounty, ward)' }, { status: 400 });
       }
 
       // Create Farmer user, Farm, and Trial Subscription (e.g. basic plan) in a transaction
@@ -34,9 +67,9 @@ export async function POST(req: Request) {
             email,
             passwordHash,
             name,
-            role: 'FARMER',
+            role: UserRole.FARMER,
             phone,
-            status: 'ACTIVE',
+            status: UserStatus.ACTIVE,
             county,
             subCounty,
           },
@@ -59,8 +92,8 @@ export async function POST(req: Request) {
         const initialSubscription = await tx.subscription.create({
           data: {
             farmerId: newUser.id,
-            plan: 'BASIC',
-            status: 'ACTIVE',
+            plan: SubscriptionPlan.BASIC,
+            status: SubscriptionStatus.ACTIVE,
             startDate: new Date(),
             endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
             amountPaid: 0.0,
@@ -69,6 +102,14 @@ export async function POST(req: Request) {
 
         return { user: newUser, farm: newFarm, subscription: initialSubscription };
       });
+
+      // Audit Logging
+      await createAuditLog(
+        result.user.id,
+        'USER_REGISTERED',
+        { role: result.user.role, email: result.user.email },
+        req
+      );
 
       return NextResponse.json({
         success: true,
@@ -80,10 +121,10 @@ export async function POST(req: Request) {
         },
       });
 
-    } else if (role === 'VET') {
-      const { licenseNumber, qualification, specialization, county, subCounty } = body;
+    } else if (role === UserRole.VET) {
+      const { licenseNumber, qualification, specialization, county, subCounty } = parsed.data;
       if (!licenseNumber || !qualification || !specialization || !county || !subCounty) {
-        return NextResponse.json({ error: 'Missing veterinarian details' }, { status: 400 });
+        return NextResponse.json({ error: 'Missing veterinarian details (licenseNumber, qualification, specialization, county, subCounty)' }, { status: 400 });
       }
 
       const newVet = await prisma.user.create({
@@ -91,9 +132,9 @@ export async function POST(req: Request) {
           email,
           passwordHash,
           name,
-          role: 'VET',
+          role: UserRole.VET,
           phone,
-          status: 'PENDING', // Vets require Admin approval
+          status: UserStatus.PENDING, // Vets require Admin approval
           licenseNumber,
           qualification,
           specialization,
@@ -101,6 +142,14 @@ export async function POST(req: Request) {
           subCounty,
         },
       });
+
+      // Audit Logging
+      await createAuditLog(
+        newVet.id,
+        'USER_REGISTERED',
+        { role: newVet.role, email: newVet.email, status: newVet.status },
+        req
+      );
 
       return NextResponse.json({
         success: true,

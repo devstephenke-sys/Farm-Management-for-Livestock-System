@@ -1,17 +1,34 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { comparePassword, signToken } from '@/lib/auth';
+import { createAuditLog } from '@/lib/api';
+import { z } from 'zod';
+import { UserStatus } from '@prisma/client';
+
+const loginSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(1, 'Password is required'),
+});
 
 export async function POST(req: Request) {
   try {
-    const { email, password } = await req.json();
-
-    if (!email || !password) {
-      return NextResponse.json(
-        { error: 'Email and password are required' },
-        { status: 400 }
-      );
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Malformed JSON' }, { status: 400 });
     }
+
+    const parsed = loginSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({
+        error: 'ValidationError',
+        message: 'Invalid login details',
+        details: parsed.error.format(),
+      }, { status: 400 });
+    }
+
+    const { email, password } = parsed.data;
 
     // Find user
     const user = await prisma.user.findUnique({
@@ -25,7 +42,7 @@ export async function POST(req: Request) {
       );
     }
 
-    if (user.status === 'SUSPENDED') {
+    if (user.status === UserStatus.SUSPENDED) {
       return NextResponse.json(
         { error: 'Your account has been suspended. Please contact support.' },
         { status: 403 }
@@ -73,6 +90,14 @@ export async function POST(req: Request) {
       path: '/',
       maxAge: 7 * 24 * 60 * 60, // 7 days
     });
+
+    // Audit Logging
+    await createAuditLog(
+      user.id,
+      'USER_LOGIN',
+      { email: user.email },
+      req
+    );
 
     return response;
   } catch (error) {

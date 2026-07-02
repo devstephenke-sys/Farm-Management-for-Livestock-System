@@ -11,8 +11,8 @@ model User {
   email                String             @unique
   passwordHash         String
   name                 String
-  role                 String             // "ADMIN", "FARMER", "VET"
-  status               String             @default("ACTIVE") // "ACTIVE", "PENDING", "SUSPENDED"
+  role                 UserRole
+  status               UserStatus         @default(ACTIVE)
   licenseNumber        String?            // For Vets
   qualification        String?            // For Vets
   specialization       String?            // For Vets
@@ -29,6 +29,7 @@ model User {
   farmerAppointments   Appointment[]      @relation("FarmerAppointments")
   vetReports           VetReport[]        @relation("VetReports")
   learningResources    LearningResource[]
+  auditLogs            AuditLog[]
 }
 
 model Farm {
@@ -57,8 +58,8 @@ model Subscription {
   id         Int      @id @default(autoincrement())
   farmerId   Int
   farmer     User     @relation(fields: [farmerId], references: [id], onDelete: Cascade)
-  plan       String   // "BASIC", "STANDARD", "PREMIUM"
-  status     String   // "ACTIVE", "EXPIRED", "PENDING"
+  plan       SubscriptionPlan
+  status     SubscriptionStatus
   startDate  DateTime @default(now())
   endDate    DateTime
   amountPaid Float
@@ -72,15 +73,15 @@ model Animal {
   name              String
   qrCode            String?
   photo             String?
-  type              String             // "COW", "GOAT", "SHEEP", "PIG", "POULTRY", "RABBIT"
+  type              AnimalType
   breed             String
-  gender            String             // "MALE", "FEMALE"
+  gender            Gender
   dob               DateTime
   color             String
   weight            Float
   fatherTag         String?
   motherTag         String?
-  status            String             @default("ACTIVE") // "ACTIVE", "SOLD", "DEAD", "MISSING"
+  status            AnimalStatus       @default(ACTIVE)
   purchaseDate      DateTime?
   purchaseCost      Float?
   farmId            Int
@@ -101,7 +102,7 @@ model HealthRecord {
   id              Int        @id @default(autoincrement())
   animalId        Int
   animal          Animal     @relation(fields: [animalId], references: [id], onDelete: Cascade)
-  type            String     // "VACCINATION", "TREATMENT", "DISEASE", "VET_VISIT", "MEDICATION"
+  type            HealthRecordType
   title           String
   date            DateTime   @default(now())
   notes           String?
@@ -116,7 +117,7 @@ model BreedingRecord {
   id             Int       @id @default(autoincrement())
   animalId       Int
   animal         Animal    @relation(fields: [animalId], references: [id], onDelete: Cascade)
-  type           String    // "HEAT_DETECTION", "MATING", "ARTIFICIAL_INSEMINATION", "PREGNANCY_CHECK", "CALVING_LAMBING"
+  type           BreedingRecordType
   date           DateTime  @default(now())
   details        String?
   result         String?   // "PREGNANT", "NOT_PREGNANT", "SUCCESS", "FAILED"
@@ -144,8 +145,8 @@ model Appointment {
   animalId       Int
   animal         Animal     @relation(fields: [animalId], references: [id], onDelete: Cascade)
   preferredDate  DateTime
-  urgency        String     // "LOW", "MEDIUM", "HIGH"
-  status         String     @default("PENDING") // "PENDING", "APPROVED", "COMPLETED", "CANCELLED"
+  urgency        AppointmentUrgency
+  status         AppointmentStatus  @default(PENDING)
   symptoms       String
   county         String
   subCounty      String
@@ -198,12 +199,12 @@ model Payment {
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   amount             Float
   phoneNumber        String
-  status             String   @default("PENDING") // "PENDING", "SUCCESS", "FAILED"
+  status             PaymentStatus    @default(PENDING)
   mpesaReceiptNumber String?
   transactionDate    DateTime?
   checkoutRequestId  String   @unique
   merchantRequestId  String?
-  plan               String?  // Plan name associated with payment
+  plan               SubscriptionPlan?
   createdAt          DateTime @default(now())
 }
 
@@ -214,7 +215,7 @@ model Notification {
   title     String
   message   String
   read      Boolean  @default(false)
-  type      String   // "VACCINATION", "DEWORMING", "PREGNANCY_CHECK", "APPOINTMENT", "SUBSCRIPTION"
+  type      NotificationType
   animalId  Int?
   createdAt DateTime @default(now())
 }
@@ -223,8 +224,8 @@ model Transaction {
   id          Int      @id @default(autoincrement())
   farmId      Int
   farm        Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  type        String   // "INCOME", "EXPENSE"
-  category    String   // "MILK_SALES", "EGG_SALES", "ANIMAL_SALES", "BREEDING_SERVICES", "FEED", "MEDICATION", "VET_SERVICES", "LABOUR", "TRANSPORT", "OTHER"
+  type        TransactionType
+  category    TransactionCategory
   amount      Float
   date        DateTime @default(now())
   description String?
@@ -236,7 +237,7 @@ model InventoryItem {
   farmId            Int
   farm              Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
   name              String
-  category          String    // "DRUG", "VACCINE", "FEED", "EQUIPMENT"
+  category          InventoryCategory
   quantity          Float
   unit              String    // "kg", "bags", "liters", "units"
   expiryDate        DateTime?
@@ -253,7 +254,7 @@ model ScheduleEvent {
   farm           Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
   animalId       Int?
   animal         Animal?   @relation(fields: [animalId], references: [id], onDelete: Cascade)
-  type           String    // "VACCINATION", "DEWORMING", "OTHER"
+  type           ScheduleEventType
   title          String
   dueDate        DateTime
   completed      Boolean   @default(false)
@@ -269,7 +270,7 @@ model Worker {
   name      String
   role      String
   phone     String?
-  status    String       @default("ACTIVE") // "ACTIVE", "INACTIVE"
+  status    WorkerStatus @default(ACTIVE)
   createdAt DateTime     @default(now())
   tasks     WorkerTask[]
 }
@@ -282,8 +283,150 @@ model WorkerTask {
   worker      Worker    @relation(fields: [workerId], references: [id], onDelete: Cascade)
   taskName    String
   description String?
-  status      String    @default("PENDING") // "PENDING", "COMPLETED"
+  status      WorkerTaskStatus @default(PENDING)
   dueDate     DateTime
   completedAt DateTime?
   createdAt   DateTime  @default(now())
+}
+
+enum UserRole {
+  ADMIN
+  FARMER
+  VET
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+}
+
+enum SubscriptionPlan {
+  BASIC
+  STANDARD
+  PREMIUM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  PENDING
+}
+
+enum AnimalType {
+  COW
+  GOAT
+  SHEEP
+  PIG
+  POULTRY
+  RABBIT
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum AnimalStatus {
+  ACTIVE
+  SOLD
+  DEAD
+  MISSING
+}
+
+enum HealthRecordType {
+  VACCINATION
+  TREATMENT
+  DISEASE
+  VET_VISIT
+  MEDICATION
+}
+
+enum BreedingRecordType {
+  HEAT_DETECTION
+  MATING
+  ARTIFICIAL_INSEMINATION
+  PREGNANCY_CHECK
+  CALVING_LAMBING
+}
+
+enum AppointmentUrgency {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AppointmentStatus {
+  PENDING
+  APPROVED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum NotificationType {
+  VACCINATION
+  DEWORMING
+  PREGNANCY_CHECK
+  APPOINTMENT
+  SUBSCRIPTION
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionCategory {
+  MILK_SALES
+  EGG_SALES
+  ANIMAL_SALES
+  BREEDING_SERVICES
+  FEED
+  MEDICATION
+  VET_SERVICES
+  LABOUR
+  TRANSPORT
+  OTHER
+}
+
+enum InventoryCategory {
+  DRUG
+  VACCINE
+  FEED
+  EQUIPMENT
+}
+
+enum ScheduleEventType {
+  VACCINATION
+  DEWORMING
+  OTHER
+}
+
+enum WorkerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum WorkerTaskStatus {
+  PENDING
+  COMPLETED
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  details   String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
